@@ -108,66 +108,7 @@ class AdATTACKModel(BaseModel):
 
         self.loss_A.backward()
 
-    # def backward_R(self):
-    #     self.loss_R_L2 = self.criterionL2(self.search_rec1, self.search_clean1) * self.weight_L2
-    #     attention_mask = (self.score_maps_clean_o > cls_thres)
-    #     num_attention = int(torch.sum(attention_mask))
-    #     if num_attention > 0:
-    #         score_map_rec_att = self.score_maps_rec[attention_mask]
-    #         score_map_clean_att = self.score_maps_clean[attention_mask]
-    #         reg_rec_att = self.reg_res_rec[0:4, attention_mask]
-    #         reg_res_att_clean = self.reg_res_clean[0:4, attention_mask]
-    #         self.loss_cls_R = (
-    #                                 torch.mean(torch.square(
-    #                                     torch.clamp(score_map_rec_att[:, 1] - score_map_clean_att[:, 1], min=-3)))
-    #                                 + torch.mean(
-    #                             torch.square(torch.clamp(score_map_clean_att[:, 0] - score_map_rec_att[:, 0], min=-3)))
-    #                         ) * self.weight_cls
-    #         # center point distance and size difference
-    #
-    #         rec_wh = reg_rec_att[2, :] * reg_rec_att[3, :]
-    #         clean_wh = reg_res_att_clean[2, :] * reg_res_att_clean[3, :]
-    #
-    #         self.loss_reg_R = torch.mean(torch.square(reg_rec_att[0, :] - reg_res_att_clean[0, :]) + torch.square(
-    #             reg_rec_att[1, :] - reg_res_att_clean[1, :])) \
-    #                         + (torch.mean(torch.abs(rec_wh - clean_wh)))
-    #
-    #         self.loss_R = self.loss_R_L2 + self.loss_cls_R + self.loss_reg_R
-    #     else:
-    #         self.loss_R = self.loss_R_L2
-    #
-    #     self.loss_R.backward()
-
-    def backward_R(self):
-        self.loss_R_L2 = self.criterionL2(self.search_rec1, self.search_clean1) * self.weight_L2
-        attention_mask = (self.score_maps_clean_o > cls_thres)
-        num_attention = int(torch.sum(attention_mask))
-        if num_attention > 0:
-            score_map_rec_att = self.score_maps_rec[attention_mask]
-            score_map_clean_att = self.score_maps_clean[attention_mask]
-            reg_rec_att = self.reg_res_rec[0:4, attention_mask]
-            reg_res_att_clean = self.reg_res_clean[0:4, attention_mask]
-            self.loss_cls_R = (
-                                    torch.mean(torch.abs(
-                                        torch.clamp(score_map_rec_att[:, 1] - score_map_clean_att[:, 1], min=-3)))
-                                    + torch.mean(
-                                torch.abs(torch.clamp(score_map_clean_att[:, 0] - score_map_rec_att[:, 0], min=-3)))
-                            ) * self.weight_cls
-            # center point distance and size difference
-
-            rec_wh = reg_rec_att[2, :] * reg_rec_att[3, :]
-            clean_wh = reg_res_att_clean[2, :] * reg_res_att_clean[3, :]
-
-            self.loss_reg_R = torch.mean(torch.square(reg_rec_att[0, :] - reg_res_att_clean[0, :]) + torch.square(
-                reg_rec_att[1, :] - reg_res_att_clean[1, :])) \
-                            + (torch.mean(torch.abs(rec_wh - clean_wh)))
-
-            self.loss_R = self.loss_R_L2 + self.loss_cls_R + self.loss_reg_R
-        else:
-            self.loss_R = self.loss_R_L2
-
-        self.loss_R.backward()
-
+   
     # before target_sz = (255,255)
     def forward(self, target_sz=(287, 287)):
         if self.zhanbi < 0.002:
@@ -183,21 +124,6 @@ class AdATTACKModel(BaseModel):
 
         self.search_adv1 = torch.nn.functional.interpolate(search512_adv1, size=target_sz, mode='bilinear')
         self.search_adv255 = self.search_adv1 * 127.5 + 127.5
-
-    def forward_R(self, target_sz=(287, 287)):
-        if self.zhanbi < 0.002:
-            block_num = 1
-            search512_attack2 = torch.nn.functional.interpolate(self.search_attack1, size=(128, 128), mode='bilinear')
-        elif self.zhanbi < 0.02:
-            block_num = 2
-            search512_attack2 = torch.nn.functional.interpolate(self.search_attack1, size=(64, 64), mode='bilinear')
-        else:
-            block_num = 3
-            search512_attack2 = torch.nn.functional.interpolate(self.search_attack1, size=(32, 32), mode='bilinear')
-        search512_rec1 = self.netA(search512_attack2, block_num)
-
-        self.search_rec1 = torch.nn.functional.interpolate(search512_rec1, size=target_sz, mode='bilinear')
-        self.search_rec255 = self.search_rec1 * 127.5 + 127.5
 
     def transform(self, patch_clean1, target_sz=(287, 287)):
         patch512_clean1 = torch.nn.functional.interpolate(patch_clean1, size=(512, 512), mode='bilinear')
@@ -218,17 +144,6 @@ class AdATTACKModel(BaseModel):
         self.backward_A()
         self.optimizer_A.step()
 
-    def optimize_parameters_R(self):
-        with torch.no_grad():
-            self.siam.model.template(self.template)
-            self.score_maps_clean_o = self.siam.get_heat_map(self.search_clean255, softmax=True)  # (5HWN,),with softmax
-        self.forward_R()
-        self.score_maps_rec, self.reg_res_rec = self.siam.get_cls_reg(self.search_rec255,
-                                                                      softmax=False)  # (5HWN,2)without softmax,(5HWN,4)
-        self.score_maps_clean, self.reg_res_clean = self.siam.get_cls_reg(self.search_clean255, softmax=False)
-        self.optimizer_A.zero_grad()
-        self.backward_R()
-        self.optimizer_A.step()
 
     def calculate_loss(self):
         self.loss_A_L2 = self.criterionL2(self.search_adv1, self.search_clean1) * self.weight_L2
