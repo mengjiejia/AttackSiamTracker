@@ -29,10 +29,6 @@ from data_utils import normalize
 parser = argparse.ArgumentParser(description='siamapn tracking')
 parser.add_argument('--dataset', default='V4RFlight112', type=str,
                     help='datasets')
-# parser.add_argument('--dataset', default='UAV123_10fps', type=str,
-#                   help='datasets')
-# parser.add_argument('--dataset', default='UAVDT', type=str,
-#                      help='datasets')
 
 parser.add_argument('--snapshot', default='../experiments/SiamAPN/model.pth',
                     type=str,
@@ -53,6 +49,8 @@ parser.add_argument('--attack', action="store_true",
                     help='attack tracking demo')
 parser.add_argument('--comparison', action="store_true",
                     help='draw original and attack prediction')
+parser.add_argument('--img_save', action="store_true",
+                    help='whether save img')
 args = parser.parse_args()
 
 # from Setting import *
@@ -150,8 +148,9 @@ def original_tracking(img_show=True):
 
                 cv2.putText(img, str(idx), (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                 # save image
-                img_name = os.path.join(img_dir, '{}.jpg'.format(idx))
-                cv2.imwrite(img_name, img)
+                if args.img_save:
+                  img_name = os.path.join(img_dir, '{}.jpg'.format(idx))
+                  cv2.imwrite(img_name, img)
                 if img_show:
                     cv2.imshow(video.name, img)
 
@@ -302,8 +301,9 @@ def Ad2test(start=1, end=-1, img_show=False):
                 #
                 cv2.putText(img, '#' + str(idx), (40, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                 # save image
-                img_name = os.path.join(img_dir, '{}.jpg'.format(idx))
-                cv2.imwrite(img_name, img)
+                if args.img_save:
+                  img_name = os.path.join(img_dir, '{}.jpg'.format(idx))
+                  cv2.imwrite(img_name, img)
                 if img_show:
                     cv2.imshow(video.name, img)
                     cv2.waitKey(1)
@@ -343,7 +343,7 @@ def compare_prediction(img_show=False):
 
     model_name = 'SiamAPN'
 
-    model_path = os.path.join('Evaluation', model_name, args.dataset)
+    model_path = os.path.join('Evaluation', 'Comparison', args.dataset)
     if not os.path.isdir(model_path):
         os.makedirs(model_path)
 
@@ -355,7 +355,7 @@ def compare_prediction(img_show=False):
                 continue
         # if video.name not in name_list:
         #     continue
-        v = video + '.txt'
+        v = video.name + '.txt'
         if v not in bbox_files:
             continue
 
@@ -366,7 +366,7 @@ def compare_prediction(img_show=False):
 
         # get original box
         o_bbox_list = []
-        original_bbox_file = os.path.join(original_bbox_path, video + '.txt')
+        original_bbox_file = os.path.join(original_bbox_path, video.name + '.txt')
         with open(original_bbox_file) as f:
             original_bboxes = f.read().splitlines()
 
@@ -377,7 +377,7 @@ def compare_prediction(img_show=False):
 
         # get attack box
         a_bbox_list = []
-        attack_bbox_file = os.path.join(attack_bbox_path, video + '.txt')
+        attack_bbox_file = os.path.join(attack_bbox_path, video.name + '.txt')
         with open(attack_bbox_file) as f:
             attack_bboxes = f.read().splitlines()
 
@@ -412,132 +412,6 @@ def compare_prediction(img_show=False):
             if img_show:
                 cv2.imshow(video.name, img)
                 cv2.waitKey(1)
-
-
-def save_images():
-    # load config
-    # print(args.config)
-    cfg.merge_from_file(args.config)
-    model_normal = ModelBuilderAPN()
-    model_attack = ModelBuilderAPN()
-
-    # print(args.snapshot)
-    model_normal = load_pretrain(model_normal, args.snapshot).cuda().eval()
-    tracker_normal = SiamAPNTracker(model_normal)
-
-    model_attack = load_pretrain(model_attack, args.snapshot).cuda().eval()
-    tracker_attack = SiamAPNTracker(model_attack)
-
-    cur_dir = os.path.dirname(os.path.realpath(__file__))
-    dataset_root = os.path.join(cur_dir, '/home/mengjie/UAV_Tracking/UAVTrack112', args.dataset)
-
-    # create dataset
-    dataset = DatasetFactory.create_dataset(name=args.dataset,
-                                            dataset_root=dataset_root,
-                                            load_img=False)
-
-    model_name = args.snapshot.split('/')[-1].split('.')[0] + str(cfg.TRACK.w1)
-    for v_idx, video in enumerate(dataset):
-
-        # if v_idx == 4:
-        #    break
-        # if video.name=='uav1_1':
-        if args.video != '':
-            # test one special video
-            if video.name != args.video:
-                continue
-        toc = 0
-        pred_bboxes_adv = []
-        pred_bboxes = []
-        scores_adv = []
-        scores = []
-        track_times = []
-        iou_v = []
-
-        model_path = os.path.join('results', args.dataset, model_name)
-        if not os.path.isdir(model_path):
-            os.makedirs(model_path)
-
-        img_dir = os.path.join(model_path, video.name)
-
-        if not os.path.isdir(img_dir):
-            os.makedirs(img_dir)
-
-        for idx, (img, gt_bbox) in enumerate(video):
-            # squeeze color
-            # img = squeeze_color(img, 4)
-
-            # median_filter
-            # img_filter = median_filter(img, 3)
-            # remember to calculate the running time separately for normal and attack model
-            tic = cv2.getTickCount()
-            if idx == 0:
-                cx, cy, w, h = get_axis_aligned_bbox(np.array(gt_bbox))
-                gt_bbox_ = [cx - (w - 1) / 2, cy - (h - 1) / 2, w, h]
-                pred_bbox = gt_bbox_
-                pred_bbox_adv = gt_bbox_
-                pred_img = img
-                tracker_normal.init(img, gt_bbox_)
-                tracker_attack.init(img, gt_bbox_)
-                iou_v.append(None)
-
-                if 'VOT2018-LT' == args.dataset:
-                    pred_bboxes.append([1])
-                else:
-                    pred_bboxes.append(pred_bbox)
-                    pred_bboxes_adv.append(pred_bbox)
-            else:
-
-                # normal image prediction
-                # before
-                # outputs = tracker.track_base(img)
-                # from here
-                x_crop, scale_z, context_2_normal, contex_1_normal, org_patch_size_normal = tracker_normal.get_x_crop(
-                    img)
-                outputs = tracker_normal.track(img, x_crop)
-
-                pred_bbox_normal = outputs['bbox']
-                pred_bboxes.append(pred_bbox_normal)
-                scores.append(outputs['best_score'])
-
-                # attack prediction
-                zhanbi = (pred_bbox_adv[2] * pred_bbox_adv[3]) / (pred_img.shape[0] * pred_img.shape[1])
-                # print(idx, 'zhanbi', zhanbi)
-
-                # loss = tracker.check_loss(img, zhanbi, AdA)
-                # print('loss', loss)
-                # cv2.imshow(video.name, img_clean1)
-
-                # outputs_adv, x_crop_adv = tracker_attack.track_adv(img, zhanbi, AdA)
-                outputs_adv, x_crop_adv, context_2_adv, context_1_adv, org_patch_size_adv = tracker_attack.track_adv(
-                    img, zhanbi, AdA)
-                # pred_bbox = outputs_adv['bbox']
-                pred_bbox_adv = outputs_adv['bbox']
-                pred_bboxes_adv.append(pred_bbox_adv)
-                scores_adv.append(outputs_adv['best_score'])
-
-                bbox_normal = np.array(pred_bbox_normal)
-                bbox_normal = np.expand_dims(bbox_normal, axis=0)
-                bbox_adv = np.array(pred_bbox_adv)
-                bbox_adv = np.expand_dims(bbox_adv, axis=0)
-
-                iou_img = overlap_ratio(bbox_normal, bbox_adv)
-                iou_v.append(iou_img[0])
-
-            toc += cv2.getTickCount() - tic
-            track_times.append((cv2.getTickCount() - tic) / cv2.getTickFrequency())
-            if idx == 0:
-                cv2.destroyAllWindows()
-            # if args.vis and idx > 0:
-            if idx > 0:
-                # save image
-                tracker_normal.save_img(x_crop, x_crop_adv, img_dir, idx)
-
-        toc /= cv2.getTickFrequency()
-        # save results
-
-        print('({:3d}) Video: {:12s} Time: {:5.1f}s Speed: {:3.1f}fps'.format(
-            v_idx + 1, video.name, toc, idx / toc))
 
 
 
