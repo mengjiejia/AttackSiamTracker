@@ -540,50 +540,6 @@ def save_images():
             v_idx + 1, video.name, toc, idx / toc))
 
 
-def save_images():
-    # load config
-    # print(args.config)
-    cfg.merge_from_file(args.config)
-    model_normal = ModelBuilderAPN()
-    model_attack = ModelBuilderAPN()
-
-    # print(args.snapshot)
-    model_normal = load_pretrain(model_normal, args.snapshot).cuda().eval()
-    tracker_normal = SiamAPNTracker(model_normal)
-
-    model_attack = load_pretrain(model_attack, args.snapshot).cuda().eval()
-    tracker_attack = SiamAPNTracker(model_attack)
-
-    # dataset_root = os.path.join(cur_dir, '/home/mengjie/UAV_Tracking/UAVTrack112', args.dataset)
-
-    train_rep = '/media/mengjie/Data/Downloads/crop287_adv'
-    # create dataset
-    # load got10k dataset
-    dataset = GOT10k_dataset(train_rep)
-    print('Start Testing')
-
-    for v_idx, video in enumerate(dataset):
-        # video = (init_tensor, search_tensor, zhanbi, cur_folder)
-
-        save_path = os.path.join('/media/mengjie/Data/Downloads', 'crop287_adv(test)')
-        if not os.path.isdir(save_path):
-            os.makedirs(save_path)
-
-        img_dir = os.path.join(save_path, video[3])
-
-        if not os.path.isdir(img_dir):
-            os.makedirs(img_dir)
-
-        AdA.set_input(video)
-        AdA.forward()
-
-        tensor_adv = AdA.search_adv255
-
-        for idx in range(len(tensor_adv)):
-            img_adv = tensor2img(tensor_adv[idx])
-            frame_id = idx + 1
-            cv2.imwrite(os.path.join(img_dir, '%08d.jpg' % frame_id), img_adv)
-
 
 if __name__ == '__main__':
 
